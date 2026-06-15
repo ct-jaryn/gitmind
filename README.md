@@ -1,5 +1,7 @@
 # gitmind
 
+[English](README.md) | [中文](README_CN.md)
+
 > Auto-generate AI context docs for any codebase. One command, instant project knowledge.
 
 `gitmind sync` scans your repository with tree-sitter, extracts code structure, and generates documentation files that AI agents (Claude Code, Cursor, Copilot) can use to understand your project instantly.
