@@ -4,6 +4,10 @@ use std::path::Path;
 
 use crate::analyzer::ProjectAnalysis;
 
+fn normalize_path(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 pub fn generate(output_dir: &str, analysis: &ProjectAnalysis) -> Result<()> {
     fs::create_dir_all(output_dir)?;
 
@@ -51,7 +55,7 @@ fn generate_agents_md(dir: &str, analysis: &ProjectAnalysis) -> Result<()> {
     for m in &analysis.modules {
         md.push_str(&format!(
             "{:<40} {}\n",
-            m.path.display(),
+            normalize_path(&m.path),
             m.description
         ));
     }
@@ -117,7 +121,7 @@ fn generate_architecture_md(dir: &str, analysis: &ProjectAnalysis) -> Result<()>
     md.push_str("## Module Map\n\n");
     for m in &analysis.modules {
         md.push_str(&format!("### `{}`\n", m.name));
-        md.push_str(&format!("- Path: `{}`\n", m.path.display()));
+        md.push_str(&format!("- Path: `{}`\n", normalize_path(&m.path)));
         md.push_str(&format!("- Lines: {}\n", m.line_count));
         md.push_str(&format!("- Symbols: {}\n", m.symbols.len()));
         if !m.symbols.is_empty() {
@@ -178,4 +182,94 @@ fn generate_knowledge_md(dir: &str, analysis: &ProjectAnalysis) -> Result<()> {
 
     fs::write(path, md)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analyzer::{Dependency, FileStats, Interface, Module, ProjectAnalysis, SymbolInfo};
+    use std::collections::HashMap;
+
+    fn dummy_analysis() -> ProjectAnalysis {
+        let mut language_stats = HashMap::new();
+        language_stats.insert("rust".to_string(), 120);
+
+        ProjectAnalysis {
+            name: "demo".to_string(),
+            modules: vec![
+                Module {
+                    name: "main".to_string(),
+                    path: std::path::PathBuf::from("./src/main.rs"),
+                    description: "Rust module with 1 function".to_string(),
+                    symbols: vec![SymbolInfo {
+                        kind: "function".to_string(),
+                        name: "main".to_string(),
+                        line: 1,
+                        is_public: false,
+                    }],
+                    line_count: 10,
+                },
+                Module {
+                    name: "util".to_string(),
+                    path: std::path::PathBuf::from("./src/util.rs"),
+                    description: "Rust module with 1 function".to_string(),
+                    symbols: vec![SymbolInfo {
+                        kind: "function".to_string(),
+                        name: "helper".to_string(),
+                        line: 3,
+                        is_public: true,
+                    }],
+                    line_count: 15,
+                },
+            ],
+            interfaces: vec![Interface {
+                name: "helper".to_string(),
+                module: "util".to_string(),
+                kind: "function".to_string(),
+                line: 3,
+            }],
+            file_stats: FileStats {
+                total_files: 2,
+                total_lines: 120,
+                avg_lines_per_file: 60,
+            },
+            language_stats,
+            dependencies: vec![Dependency {
+                name: "serde".to_string(),
+                version: Some("1".to_string()),
+            }],
+        }
+    }
+
+    #[test]
+    fn generates_expected_markdown_files() {
+        let tmp = std::env::temp_dir().join("gitmind_test_output");
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let analysis = dummy_analysis();
+        generate(tmp.to_str().unwrap(), &analysis).expect("generate should succeed");
+
+        let agents = std::fs::read_to_string(tmp.join("AGENTS.md")).expect("AGENTS.md");
+        assert!(agents.contains("# demo"));
+        assert!(agents.contains("Languages: rust (120 lines)"));
+        assert!(agents.contains("`serde` (1)"));
+        assert!(agents.contains("### util"));
+        assert!(agents.contains("- `function` helper (line 3)"));
+        assert!(agents.contains("./src/main.rs"));
+        assert!(agents.contains("./src/util.rs"));
+        assert!(!agents.contains("\\\\")); // no backslashes
+
+        let arch = std::fs::read_to_string(tmp.join("architecture.md")).expect("architecture.md");
+        assert!(arch.contains("# demo Architecture"));
+        assert!(arch.contains("| rust | 120 | 100.0% |"));
+        assert!(arch.contains("### `util`"));
+        assert!(arch.contains("- Path: `./src/util.rs`"));
+
+        let knowledge = std::fs::read_to_string(tmp.join("knowledge.md")).expect("knowledge.md");
+        assert!(knowledge.contains("# demo Knowledge Base"));
+        assert!(knowledge.contains("- `serde` v1"));
+        assert!(knowledge.contains("util.helper: function (line 3)"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }

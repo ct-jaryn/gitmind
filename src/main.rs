@@ -56,7 +56,8 @@ fn main() -> Result<()> {
             println!("Project Stats:");
             println!("  Files: {}", files.len());
             for f in &files {
-                println!("    {} ({} lines)", f.path.display(), f.line_count);
+                let path = f.path.to_string_lossy().replace('\\', "/");
+                println!("    {} ({} lines)", path, f.line_count);
             }
         }
     }
